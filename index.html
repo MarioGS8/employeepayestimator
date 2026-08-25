@@ -71,6 +71,9 @@
     font-family:-apple-system,sans-serif; font-size:12px; color:var(--warn-ink);
     background:var(--warn-bg); border-radius:9px; padding:0.75rem 1rem; line-height:1.5; margin-top:1.25rem;
   }
+  .dash-list{list-style:none; padding-left:0; margin-top:0.85rem;}
+  .dash-list li{position:relative; padding-left:14px; margin-bottom:6px; font-family:-apple-system,sans-serif; font-size:12px; color:var(--warn-ink); line-height:1.5;}
+  .dash-list li:before{content:'–'; position:absolute; left:0;}
   .setup-banner{
     font-family:-apple-system,sans-serif; font-size:12.5px; color:var(--muted);
     border:1px dashed var(--line); border-radius:10px; padding:0.85rem 1rem; margin-bottom:1.25rem; line-height:1.5;
@@ -137,6 +140,7 @@
         <div class="field"><label>Monthly visits</label><input type="number" id="mix-monthly" min="0" step="1" value="0" oninput="onMixVisitsChange('monthly')"></div>
       </div>
       <p class="hint" style="margin-top:0.5rem; margin-bottom:0.85rem;">Fill in whichever one the therapist actually knows — the other two follow. Daily↔weekly uses "Days per week" from About you, above.</p>
+      <p class="hint" id="mix-daily-warn" style="display:none; color:var(--warn-ink); margin-bottom:0.85rem;">⚠ "Days per week at the clinic" is still 0 in About you, above — Daily visits can't convert to Weekly/Monthly until that's filled in.</p>
       <div class="grid">
         <div class="field">
           <label>% 15min sessions</label>
@@ -241,7 +245,7 @@
     <h2>Monthly Estimated Net Pay</h2>
     <p class="hint">Total commission after RRSP, QPP, QPIP, EI, and estimated income tax. Vacation accrual, CEUs, and employer benefits aren't cash yet, so they're not in this number.</p>
     <table class="breakdown" id="net-pay-table"></table>
-    <p class="hint" style="margin-top:0.85rem; color:var(--warn-ink);">⚠ Rough estimate, not a paystub — can be off by a few hundred dollars. RRSP treatment (employer match affects QPP/QPIP/EI only, your 6% is a post-tax deduction) matches this clinic's actual QuickBooks setup. Vacation accrual, statutory holiday, and personal day pay are still treated as fully taxable cash even though vacation accrual isn't actually paid out yet — a simplification, not confirmed against real settings. Assumes this month's commission is representative, doesn't track your real year-to-date QPP/QPIP/EI caps, uses the max federal exemption instead of your actual TD1/TP-1015.3, and excludes other income and personal credits. Based on 2026 rates — needs updating each year.</p>
+    <ul class="dash-list" id="net-pay-footnote"></ul>
   </div>
 
   <div class="disclaimer">
@@ -298,6 +302,17 @@ function bracketTax(income, brackets){
     if(income>lo) tax += (Math.min(income,hi)-lo)*rate;
   }
   return tax;
+}
+
+// Combined federal + Quebec income tax on a given ANNUAL taxable income, used to compute
+// the filing-time RRSP refund (tax owed with vs. without the deduction).
+function combinedIncomeTax(taxableIncome){
+  const taxable=Math.max(0, taxableIncome);
+  const fedGross=bracketTax(taxable, FEDERAL_BRACKETS_2026);
+  const fedNet=Math.max(0, fedGross - FEDERAL_BPA_2026*0.14) * (1-FEDERAL_ABATEMENT_QC);
+  const qcGross=bracketTax(taxable, QC_BRACKETS_2026);
+  const qcNet=Math.max(0, qcGross - QC_BPA_2026*0.14);
+  return fedNet+qcNet;
 }
 
 // Annualizes this month's commission (×12) to estimate withholding the way real payroll
@@ -488,6 +503,7 @@ function onMixVisitsChange(source){
   const dailyEl=document.getElementById('mix-daily');
   const weeklyEl=document.getElementById('mix-weekly');
   const monthlyEl=document.getElementById('mix-monthly');
+  const warnEl=document.getElementById('mix-daily-warn');
 
   if(source==='daily'){
     const daily=parseFloat(dailyEl.value)||0;
@@ -495,18 +511,21 @@ function onMixVisitsChange(source){
     const monthly=Math.round(weekly*WEEKS_PER_MONTH);
     weeklyEl.value=Math.round(weekly*10)/10;
     monthlyEl.value=monthly;
+    warnEl.style.display=(daily>0 && daysPerWeek<=0) ? 'block' : 'none';
   } else if(source==='weekly'){
     const weekly=parseFloat(weeklyEl.value)||0;
     const monthly=Math.round(weekly*WEEKS_PER_MONTH);
     const daily=daysPerWeek>0 ? weekly/daysPerWeek : 0;
     dailyEl.value=Math.round(daily*10)/10;
     monthlyEl.value=monthly;
+    warnEl.style.display='none';
   } else {
     const monthly=parseFloat(monthlyEl.value)||0;
     const weekly=monthly/WEEKS_PER_MONTH;
     const daily=daysPerWeek>0 ? weekly/daysPerWeek : 0;
     weeklyEl.value=Math.round(weekly*10)/10;
     dailyEl.value=Math.round(daily*10)/10;
+    warnEl.style.display='none';
   }
   updateMixCounts();
 }
@@ -717,22 +736,32 @@ function calculate(){
   const employeeRrsp6Yearly=yearlyCommission*0.06;
   const yearlyDeductions=computeAnnualDeductions(pensionableInsurableYearly, taxableYearly);
   const yearlyNetPay=yearlyCommission+otherIncomeExRRSPYearly-employeeRrsp6Yearly-yearlyDeductions.qpp-yearlyDeductions.qpip-yearlyDeductions.ei-yearlyDeductions.tax;
+  const rrspFilingRefund=combinedIncomeTax(taxableYearly)-combinedIncomeTax(taxableYearly-employeeRrsp6Yearly);
 
   let netHtml='';
   netHtml+=`<tr><td>Total commission + other income (excl. employer RRSP match)</td><td>$${(gross+otherIncomeExRRSP).toFixed(2)}</td></tr>`;
-  netHtml+=`<tr><td>Your RRSP contribution (6% — post-tax, doesn't reduce tax owed)</td><td>−$${employeeRrsp6Monthly.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr><td>Your RRSP contribution (6% — taxed as income each paycheque, deducted at year end)</td><td>−$${employeeRrsp6Monthly.toFixed(2)}</td></tr>`;
   netHtml+=`<tr><td>QPP (Quebec Pension Plan)</td><td>−$${deductions.qpp.toFixed(2)}</td></tr>`;
   netHtml+=`<tr><td>QPIP (parental insurance)</td><td>−$${deductions.qpip.toFixed(2)}</td></tr>`;
   netHtml+=`<tr><td>EI (Employment Insurance)</td><td>−$${deductions.ei.toFixed(2)}</td></tr>`;
   netHtml+=`<tr><td>Estimated income tax (federal + Quebec)</td><td>−$${deductions.tax.toFixed(2)}</td></tr>`;
-  netHtml+=`<tr class="rrsp"><td style="padding-left:14px">↳ Employer RRSP match ($${rrspER.toFixed(2)}/mo) isn't cash to you, so it's not in this total — but it does count toward your QPP/QPIP/EI above</td><td></td></tr>`;
-  if(healthEmployerShare>0){
-    netHtml+=`<tr class="rrsp"><td style="padding-left:14px">↳ Includes tax on $${healthEmployerShare.toFixed(2)}/mo health insurance taxable benefit (no cash added, but taxed)</td><td></td></tr>`;
-  }
   netHtml+=`<tr class="total"><td>Estimated net pay</td><td>$${netPay.toFixed(2)}</td></tr>`;
-  netHtml+=`<tr class="rrsp"><td style="padding-top:12px">↳ Estimated yearly amount (before deductions)</td><td style="padding-top:12px">$${yearlyTotal.toFixed(2)}</td></tr>`;
-  netHtml+=`<tr class="rrsp"><td>↳ Your RRSP (6%) + QPP + QPIP + EI + tax</td><td>−$${(employeeRrsp6Yearly+yearlyDeductions.qpp+yearlyDeductions.qpip+yearlyDeductions.ei+yearlyDeductions.tax).toFixed(2)}</td></tr>`;
+  netHtml+=`<tr class="bonus-row"><td style="padding-left:14px">↳ + Your RRSP contribution</td><td>+$${employeeRrsp6Monthly.toFixed(2)}</td></tr>`;
   netHtml+=`<tr class="total"><td>Estimated yearly net pay</td><td>$${yearlyNetPay.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr class="bonus-row"><td style="padding-left:14px">↳ + Your RRSP contributions this year</td><td>+$${employeeRrsp6Yearly.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr class="rrsp" style="padding-top:12px"><td style="padding-top:12px">↳ Estimated refund at tax filing from your RRSP contribution ($${employeeRrsp6Yearly.toFixed(2)}/yr)</td><td style="padding-top:12px">+$${rrspFilingRefund.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr class="rrsp"><td style="padding-left:14px">↳ Only if you have enough RRSP room and claim it when filing — not automatic, not included in the totals above</td><td></td></tr>`;
+  const footnotePoints=[
+    `Rough estimate, not a paystub — can be off by a few hundred dollars.`,
+    `RRSP employer match ($${rrspER.toFixed(2)}/mo) is the 3% your employer contributes to your RRSP account on top of your own 6%. You don't pay income tax on this but it does increase your QPP/QPIP/EI.`,
+    `Your own 6% RRSP contribution ($${employeeRrsp6Monthly.toFixed(2)}/mo) is taxed as income on every paycheque, but claiming it as a deduction when you file gets you a refund for it at tax time.`,
+    `Group health insurance ($${healthEmployerShare.toFixed(2)}/mo) is the clinic's 50% share of your monthly premium — it's taxed as income even though you don't receive it as cash.`,
+    `The filing-time refund line assumes you have unused RRSP room and actually claim the deduction — if not, it won't happen.`,
+    `Vacation accrual, statutory holiday, and personal day pay are treated as income and taxed. Vacation accrual is added on top of the commission you earned — nothing is ever deducted from your paycheque for vacation.`,
+    `Assumes this month's commission is representative, doesn't track your real year-to-date QPP/QPIP/EI caps, uses the max federal exemption instead of your actual TD1/TP-1015.3, and excludes other income and personal credits.`,
+    `Based on 2026 rates.`
+  ];
+  document.getElementById('net-pay-footnote').innerHTML=footnotePoints.map(p=>`<li>${p}</li>`).join('');
   netCard.style.display='block';
   netTbl.innerHTML=netHtml;
 
