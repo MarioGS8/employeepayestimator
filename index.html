@@ -241,7 +241,7 @@
     <h2>Monthly Estimated Net Pay</h2>
     <p class="hint">Total commission after RRSP, QPP, QPIP, EI, and estimated income tax. Vacation accrual, CEUs, and employer benefits aren't cash yet, so they're not in this number.</p>
     <table class="breakdown" id="net-pay-table"></table>
-    <p class="hint" style="margin-top:0.85rem; color:var(--warn-ink);">⚠ Rough estimate, not a paystub — can be off by a few hundred dollars. Assumes this month repeats all year, doesn't track your real year-to-date QPP/QPIP/EI caps, uses the max federal exemption instead of your actual TD1/TP-1015.3, and excludes other income and personal credits. Based on 2026 rates — needs updating each year.</p>
+    <p class="hint" style="margin-top:0.85rem; color:var(--warn-ink);">⚠ Rough estimate, not a paystub — can be off by a few hundred dollars. RRSP treatment (employer match affects QPP/QPIP/EI only, your 6% is a post-tax deduction) matches this clinic's actual QuickBooks setup. Vacation accrual, statutory holiday, and personal day pay are still treated as fully taxable cash even though vacation accrual isn't actually paid out yet — a simplification, not confirmed against real settings. Assumes this month's commission is representative, doesn't track your real year-to-date QPP/QPIP/EI caps, uses the max federal exemption instead of your actual TD1/TP-1015.3, and excludes other income and personal credits. Based on 2026 rates — needs updating each year.</p>
   </div>
 
   <div class="disclaimer">
@@ -305,32 +305,42 @@ function bracketTax(income, brackets){
 // biggest source of error for a commission-based role — a real month rarely repeats
 // itself 12 times, so the annualized income guess (and everything downstream of it) can
 // be meaningfully off from what actual year-end tax works out to.
-function estimateNetPayDeductions(monthlyCommission, monthlyHealthTaxableBenefit, monthlyRrspEE){
-  const annualGross = monthlyCommission*12;
-  const annualHealthBenefit = monthlyHealthTaxableBenefit*12;
-  const annualRrspEE = monthlyRrspEE*12;
-
-  const qppPensionable = Math.max(0, Math.min(annualGross,QPP_MPE)-QPP_BASIC_EXEMPTION);
+// Pure-annual version: takes figures that are ALREADY annual totals (no internal ×12).
+// Used for the true "Estimated yearly amount" figure, which is built from real annual
+// counts (8 holidays, 2 personal days) rather than a monthly-times-12 guess — so its tax
+// treatment should be computed directly on that real annual number, not re-annualized.
+// Separate bases because the employer RRSP match and employee RRSP deduction are taxed
+// differently per this company's actual QuickBooks Payroll setup (confirmed via
+// screenshot): the employer match is Pensionable + Insurable but NOT Taxable, so it
+// affects QPP/QPIP/EI but not income tax. The employee's own 6% is Taxable but NOT
+// Pensionable/Insurable, and isn't a pre-tax deduction — so it doesn't reduce QPP/QPIP/EI
+// OR income tax; it's a straight post-tax subtraction from cash pay.
+function computeAnnualDeductions(pensionableInsurableAnnual, taxableAnnual){
+  const qppPensionable = Math.max(0, Math.min(pensionableInsurableAnnual,QPP_MPE)-QPP_BASIC_EXEMPTION);
   let qppAnnual = qppPensionable*QPP_RATE1;
-  if(annualGross>QPP_MPE){
-    qppAnnual += (Math.min(annualGross,QPP_MPE2)-QPP_MPE)*QPP_RATE2;
+  if(pensionableInsurableAnnual>QPP_MPE){
+    qppAnnual += (Math.min(pensionableInsurableAnnual,QPP_MPE2)-QPP_MPE)*QPP_RATE2;
   }
+  const qpipAnnual = Math.min(Math.min(pensionableInsurableAnnual,QPIP_MAX_INSURABLE)*QPIP_RATE, QPIP_MAX_ANNUAL);
+  const eiAnnual = Math.min(Math.min(pensionableInsurableAnnual,EI_MAX_INSURABLE)*EI_RATE_QC, EI_MAX_ANNUAL);
 
-  const qpipAnnual = Math.min(Math.min(annualGross,QPIP_MAX_INSURABLE)*QPIP_RATE, QPIP_MAX_ANNUAL);
-  const eiAnnual = Math.min(Math.min(annualGross,EI_MAX_INSURABLE)*EI_RATE_QC, EI_MAX_ANNUAL);
-
-  const taxableIncome = Math.max(0, annualGross + annualHealthBenefit - annualRrspEE);
+  const taxableIncome = Math.max(0, taxableAnnual);
   const fedGrossTax = bracketTax(taxableIncome, FEDERAL_BRACKETS_2026);
   const fedNetTax = Math.max(0, fedGrossTax - FEDERAL_BPA_2026*0.14) * (1-FEDERAL_ABATEMENT_QC);
   const qcGrossTax = bracketTax(taxableIncome, QC_BRACKETS_2026);
   const qcNetTax = Math.max(0, qcGrossTax - QC_BPA_2026*0.14);
   const annualTax = fedNetTax + qcNetTax;
 
+  return { qpp: qppAnnual, qpip: qpipAnnual, ei: eiAnnual, tax: annualTax };
+}
+
+function estimateNetPayDeductions(monthlyPensionableInsurable, monthlyTaxable){
+  const annual = computeAnnualDeductions(monthlyPensionableInsurable*12, monthlyTaxable*12);
   return {
-    qpp: qppAnnual/12,
-    qpip: qpipAnnual/12,
-    ei: eiAnnual/12,
-    tax: annualTax/12
+    qpp: annual.qpp/12,
+    qpip: annual.qpip/12,
+    ei: annual.ei/12,
+    tax: annual.tax/12
   };
 }
 
@@ -342,7 +352,16 @@ function onAboutChange(){
   localStorage.setItem(ABOUT_KEY, JSON.stringify({daysPerWeek, healthPremium, vacationWeeks, ceuAllowance}));
   const cleaningEl=document.getElementById('cleaning-days');
   if(cleaningEl) cleaningEl.value = Math.round(daysPerWeek*WEEKS_PER_MONTH);
-  calculate();
+  // Days per week feeds the Daily↔Weekly conversion in the session mix tool — if someone
+  // already typed a Daily visits number, changing this here would otherwise leave Weekly/
+  // Monthly (and every session count downstream) silently stale until they touched the
+  // mix box again.
+  const dailyEl=document.getElementById('mix-daily');
+  if(dailyEl && parseFloat(dailyEl.value)>0){
+    onMixVisitsChange('daily');
+  } else {
+    calculate();
+  }
 }
 
 function loadAbout(){
@@ -681,21 +700,39 @@ function calculate(){
 
   const netCard=document.getElementById('net-pay-card');
   const netTbl=document.getElementById('net-pay-table');
-  const rrspEE=gross*0.06;
-  const deductions=estimateNetPayDeductions(gross, healthEmployerShare, rrspEE);
-  const netPay=gross-rrspEE-deductions.qpp-deductions.qpip-deductions.ei-deductions.tax;
+  // Monthly: commission + non-RRSP other income (vacation accrual, holiday, personal day)
+  // are both pensionable/insurable AND taxable, same simplification as before. Employer
+  // RRSP match is pensionable/insurable but not taxable (confirmed via QBO). Employee's
+  // 6% is neither — straight post-tax deduction from cash.
+  const otherIncomeExRRSP=incomeTotal-rrspER;
+  const pensionableInsurableMonthly=gross+otherIncomeExRRSP+rrspER;
+  const taxableMonthly=gross+otherIncomeExRRSP+healthEmployerShare;
+  const employeeRrsp6Monthly=gross*0.06;
+  const deductions=estimateNetPayDeductions(pensionableInsurableMonthly, taxableMonthly);
+  const netPay=gross+otherIncomeExRRSP-employeeRrsp6Monthly-deductions.qpp-deductions.qpip-deductions.ei-deductions.tax;
+
+  const otherIncomeExRRSPYearly=yearlyOtherIncome-(rrspER*12);
+  const pensionableInsurableYearly=yearlyCommission+otherIncomeExRRSPYearly+(rrspER*12);
+  const taxableYearly=yearlyCommission+otherIncomeExRRSPYearly+(healthEmployerShare*12);
+  const employeeRrsp6Yearly=yearlyCommission*0.06;
+  const yearlyDeductions=computeAnnualDeductions(pensionableInsurableYearly, taxableYearly);
+  const yearlyNetPay=yearlyCommission+otherIncomeExRRSPYearly-employeeRrsp6Yearly-yearlyDeductions.qpp-yearlyDeductions.qpip-yearlyDeductions.ei-yearlyDeductions.tax;
+
   let netHtml='';
-  netHtml+=`<tr><td>Total commission</td><td>$${gross.toFixed(2)}</td></tr>`;
-  netHtml+=`<tr><td>RRSP contribution (6%, still yours — redirected, not lost)</td><td>−$${rrspEE.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr><td>Total commission + other income (excl. employer RRSP match)</td><td>$${(gross+otherIncomeExRRSP).toFixed(2)}</td></tr>`;
+  netHtml+=`<tr><td>Your RRSP contribution (6% — post-tax, doesn't reduce tax owed)</td><td>−$${employeeRrsp6Monthly.toFixed(2)}</td></tr>`;
   netHtml+=`<tr><td>QPP (Quebec Pension Plan)</td><td>−$${deductions.qpp.toFixed(2)}</td></tr>`;
   netHtml+=`<tr><td>QPIP (parental insurance)</td><td>−$${deductions.qpip.toFixed(2)}</td></tr>`;
   netHtml+=`<tr><td>EI (Employment Insurance)</td><td>−$${deductions.ei.toFixed(2)}</td></tr>`;
   netHtml+=`<tr><td>Estimated income tax (federal + Quebec)</td><td>−$${deductions.tax.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr class="rrsp"><td style="padding-left:14px">↳ Employer RRSP match ($${rrspER.toFixed(2)}/mo) isn't cash to you, so it's not in this total — but it does count toward your QPP/QPIP/EI above</td><td></td></tr>`;
   if(healthEmployerShare>0){
     netHtml+=`<tr class="rrsp"><td style="padding-left:14px">↳ Includes tax on $${healthEmployerShare.toFixed(2)}/mo health insurance taxable benefit (no cash added, but taxed)</td><td></td></tr>`;
   }
   netHtml+=`<tr class="total"><td>Estimated net pay</td><td>$${netPay.toFixed(2)}</td></tr>`;
-  netHtml+=`<tr class="total"><td>Estimated yearly net pay</td><td>$${(netPay*12).toFixed(2)}</td></tr>`;
+  netHtml+=`<tr class="rrsp"><td style="padding-top:12px">↳ Estimated yearly amount (before deductions)</td><td style="padding-top:12px">$${yearlyTotal.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr class="rrsp"><td>↳ Your RRSP (6%) + QPP + QPIP + EI + tax</td><td>−$${(employeeRrsp6Yearly+yearlyDeductions.qpp+yearlyDeductions.qpip+yearlyDeductions.ei+yearlyDeductions.tax).toFixed(2)}</td></tr>`;
+  netHtml+=`<tr class="total"><td>Estimated yearly net pay</td><td>$${yearlyNetPay.toFixed(2)}</td></tr>`;
   netCard.style.display='block';
   netTbl.innerHTML=netHtml;
 
