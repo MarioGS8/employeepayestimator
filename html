@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Pay Estimator</title>
+<style>
+  :root{
+    --ink:#1c2a24; --paper:#f6f4ee; --line:rgba(28,42,36,0.14);
+    --sage:#3d6650; --sage-dark:#264536; --clay:#a15a3a;
+    --card:#ffffff; --muted:#5f6b64; --warn-bg:#fbeee3; --warn-ink:#8a4a20;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:'Iowan Old Style','Georgia',serif;
+    background:var(--paper); color:var(--ink);
+    min-height:100vh; padding:2.5rem 1.25rem 4rem;
+  }
+  .wrap{max-width:760px;margin:0 auto;}
+  header{margin-bottom:2rem;}
+  .eyebrow{
+    font-family:-apple-system,'Helvetica Neue',sans-serif;
+    font-size:11px; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--sage); font-weight:600; margin-bottom:0.5rem;
+  }
+  h1{font-size:30px; font-weight:500; line-height:1.15; letter-spacing:-0.01em;}
+  .sub{font-family:-apple-system,'Helvetica Neue',sans-serif; font-size:14px; color:var(--muted); margin-top:0.5rem; max-width:52ch; line-height:1.5;}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:1.5rem; margin-bottom:1.25rem;
+  }
+  .card h2{
+    font-family:-apple-system,'Helvetica Neue',sans-serif;
+    font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--sage-dark); margin-bottom:1rem;
+  }
+  .card p.hint{font-family:-apple-system,sans-serif; font-size:12.5px; color:var(--muted); line-height:1.5; margin-bottom:1rem;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:0.85rem;}
+  .field{display:flex; flex-direction:column; gap:5px;}
+  .field label{font-family:-apple-system,sans-serif; font-size:12px; color:var(--muted);}
+  input[type=number], input[type=text]{
+    font-family:-apple-system,sans-serif; padding:8px 10px; border:1px solid var(--line);
+    border-radius:8px; font-size:14px; background:#fdfcf9; color:var(--ink);
+  }
+  input:focus{outline:none; border-color:var(--sage);}
+  .rate-note{display:flex; align-items:center; gap:8px; margin-top:0.5rem;}
+  .rate-note input{width:auto; flex:0 0 auto;}
+  .session-row{
+    display:grid; grid-template-columns:1.6fr 0.8fr 0.9fr 0.9fr; gap:0.75rem;
+    align-items:end; padding:0.6rem 0; border-bottom:1px solid var(--line);
+  }
+  .session-row:last-of-type{border-bottom:none;}
+  .session-row .label{font-family:-apple-system,sans-serif; font-size:13.5px; padding-bottom:9px;}
+  .session-row .rate-display{font-family:-apple-system,sans-serif; font-size:12px; color:var(--muted); padding-bottom:9px; text-align:right;}
+  .amt{font-variant-numeric:tabular-nums;}
+  .toggle-row{display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;}
+  .btn{
+    font-family:-apple-system,sans-serif; font-weight:600; font-size:13.5px;
+    padding:10px 18px; border-radius:9px; border:none; cursor:pointer;
+  }
+  .btn-primary{background:var(--sage-dark); color:#fff; width:100%; padding:13px; font-size:15px; margin-top:0.5rem;}
+  .btn-primary:hover{background:var(--sage);}
+  .btn-ghost{background:none; border:1px solid var(--line); color:var(--ink);}
+  .btn-ghost:hover{background:#f0efe8;}
+  table.breakdown{width:100%; border-collapse:collapse; font-family:-apple-system,sans-serif; font-size:13.5px;}
+  table.breakdown td{padding:6px 4px; border-bottom:1px solid var(--line);}
+  table.breakdown td:last-child{text-align:right; font-variant-numeric:tabular-nums;}
+  table.breakdown tr.total td{font-weight:700; border-top:1.5px solid var(--ink); border-bottom:none; padding-top:10px; font-size:15px;}
+  table.breakdown tr.rrsp td{color:var(--sage-dark); font-size:12.5px;}
+  .disclaimer{
+    font-family:-apple-system,sans-serif; font-size:12px; color:var(--warn-ink);
+    background:var(--warn-bg); border-radius:9px; padding:0.75rem 1rem; line-height:1.5; margin-top:1.25rem;
+  }
+  .setup-banner{
+    font-family:-apple-system,sans-serif; font-size:12.5px; color:var(--muted);
+    border:1px dashed var(--line); border-radius:10px; padding:0.85rem 1rem; margin-bottom:1.25rem; line-height:1.5;
+  }
+  .privacy-note{font-family:-apple-system,sans-serif; font-size:11.5px; color:var(--muted); margin-top:2rem; text-align:center; line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Activ Axion</div>
+    <h1>My pay estimator</h1>
+    <p class="sub">Enter your own rate card once, then log a pay period's sessions to see an estimate. Nothing here is sent anywhere — it stays in this browser.</p>
+  </header>
+
+  <!-- ABOUT YOU -->
+  <div class="card" id="about-card">
+    <h2>About you</h2>
+    <p class="hint">These feed the estimate below. Update them any time your schedule or benefits change.</p>
+    <div class="grid">
+      <div class="field">
+        <label>Days per week at the clinic</label>
+        <input type="number" id="days-per-week" min="0" max="7" step="1" value="0" oninput="onAboutChange()">
+      </div>
+      <div class="field">
+        <label>Group health premium — monthly total ($)</label>
+        <input type="number" id="health-premium" min="0" step="0.01" value="0" oninput="onAboutChange()">
+      </div>
+      <div class="field">
+        <label>Vacation weeks per year</label>
+        <input type="number" id="vacation-weeks" min="0" step="0.5" value="2" oninput="onAboutChange()">
+      </div>
+      <div class="field">
+        <label>CEU allowance per year ($)</label>
+        <input type="number" id="ceu-allowance" min="0" step="0.01" value="500" oninput="onAboutChange()">
+      </div>
+    </div>
+  </div>
+
+  <!-- RATE CARD -->
+  <div class="card" id="rate-card">
+    <div class="toggle-row">
+      <h2 style="margin-bottom:0">Your rate card</h2>
+    </div>
+    <p class="hint" id="rate-hint">Enter the rates from your contract or pay agreement. Saved only on this device — clear it any time with the button at the bottom.</p>
+    <div class="grid" id="rate-fields"></div>
+    <div class="rate-note">
+      <input type="checkbox" id="has-salary" onchange="toggleSalaryField()">
+      <label for="has-salary" style="font-family:-apple-system,sans-serif; font-size:12.5px; color:var(--muted)">I have a salary component</label>
+    </div>
+    <div class="grid" id="salary-field-wrap" style="display:none; margin-top:0.75rem;"></div>
+    <button class="btn btn-primary" id="save-rates-btn" onclick="saveRates()" style="margin-top:1rem;">Save rate card</button>
+  </div>
+
+  <!-- SESSIONS -->
+  <div class="card" id="sessions-card" style="display:none;">
+    <h2>This month</h2>
+    <p class="hint">Enter counts directly below, or use the mix helper to fill them from a monthly total.</p>
+
+    <div style="border:1px solid var(--line); border-radius:10px; padding:1rem; margin-bottom:1.25rem; background:#fbfaf6;">
+      <div class="grid">
+        <div class="field"><label>Daily visits</label><input type="number" id="mix-daily" min="0" step="0.5" value="0" oninput="onMixVisitsChange('daily')"></div>
+        <div class="field"><label>Weekly visits</label><input type="number" id="mix-weekly" min="0" step="0.5" value="0" oninput="onMixVisitsChange('weekly')"></div>
+        <div class="field"><label>Monthly visits</label><input type="number" id="mix-monthly" min="0" step="1" value="0" oninput="onMixVisitsChange('monthly')"></div>
+      </div>
+      <p class="hint" style="margin-top:0.5rem; margin-bottom:0.85rem;">Fill in whichever one the therapist actually knows — the other two follow. Daily↔weekly uses "Days per week" from About you, above.</p>
+      <div class="grid">
+        <div class="field">
+          <label>% 15min sessions</label>
+          <input type="number" id="mix-pct-15" min="0" max="100" step="1" value="0" oninput="updateMixCounts()">
+          <span class="hint" id="mix-count-15" style="margin:0;">→ 0 sessions</span>
+        </div>
+        <div class="field">
+          <label>% 30min sessions</label>
+          <input type="number" id="mix-pct-30" min="0" max="100" step="1" value="25" oninput="updateMixCounts()">
+          <span class="hint" id="mix-count-30" style="margin:0;">→ 0 sessions</span>
+        </div>
+        <div class="field">
+          <label>% 45min sessions (rest)</label>
+          <input type="number" id="mix-pct-45" min="0" max="100" step="1" value="60" disabled style="background:#eee; color:#5f6b64;">
+          <span class="hint" id="mix-count-45" style="margin:0;">→ 0 sessions</span>
+        </div>
+        <div class="field">
+          <label>% 60min sessions (assessments)</label>
+          <input type="number" id="mix-pct-60" min="0" max="100" step="1" value="15" oninput="updateMixCounts()">
+          <span class="hint" id="mix-count-60" style="margin:0;">→ 0 sessions</span>
+        </div>
+        <div class="field">
+          <label>% 90min sessions</label>
+          <input type="number" id="mix-pct-90" min="0" max="100" step="1" value="0" oninput="updateMixCounts()">
+          <span class="hint" id="mix-count-90" style="margin:0;">→ 0 sessions</span>
+        </div>
+      </div>
+      <p class="hint" id="mix-check" style="margin-top:0.6rem; margin-bottom:0;"></p>
+      <p class="hint" style="margin-top:0.6rem; margin-bottom:0;">Counts below fill in live from this. For exact numbers instead, leave these boxes at 0 and type directly into the count fields below.</p>
+    </div>
+
+    <div id="session-rows"></div>
+
+    <div style="margin-top:1rem; border-top:1px solid var(--line); padding-top:1rem;">
+      <div class="grid">
+        <div class="field">
+          <label>Product sales this month ($, subtotal)</label>
+          <input type="number" id="product-subtotal" min="0" step="0.01" value="0" oninput="calculate()">
+        </div>
+        <div class="field">
+          <label>Commission (10%, auto)</label>
+          <input type="text" id="product-commission-display" value="$0.00" disabled style="background:#eee; color:#5f6b64;">
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:1rem; border-top:1px solid var(--line); padding-top:1rem;">
+      <div class="grid">
+        <div class="field"><label>Days worked (for cleaning time)</label><input type="number" id="cleaning-days" min="0" value="0" oninput="calculate()"></div>
+        <div class="field"><label>Charting pay (10min × total patients, auto)</label><input type="text" id="charting-display" value="$0.00" disabled style="background:#eee; color:#5f6b64;"></div>
+      </div>
+    </div>
+
+    <div style="margin-top:1rem; border-top:1px solid var(--line); padding-top:1rem;">
+      <label style="display:flex; align-items:center; gap:8px; font-family:-apple-system,sans-serif; font-size:13px; margin-bottom:0.6rem;">
+        <input type="checkbox" id="stat-holiday-check" style="width:auto;" onchange="onStatHolidayToggle()">
+        There was a statutory holiday this month
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; font-family:-apple-system,sans-serif; font-size:13px; margin-bottom:0.85rem;">
+        <input type="checkbox" id="sick-day-check" style="width:auto;" onchange="onSickDayToggle()">
+        A personal day was taken this month
+      </label>
+      <div class="grid">
+        <input type="hidden" id="manual-sick" value="0">
+        <input type="hidden" id="manual-holiday" value="0">
+        <div class="field"><label>Google reviews (count, $5 ea)</label><input type="number" id="bonus-google" min="0" step="1" value="0" oninput="calculate()"></div>
+        <div class="field"><label>Word-of-mouth referrals (count, $5 ea)</label><input type="number" id="bonus-referral" min="0" step="1" value="0" oninput="calculate()"></div>
+        <div class="field"><label>Performance bonus ($)</label><input type="number" id="bonus-performance" min="0" step="0.01" value="0" oninput="calculate()"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="card" id="results-card" style="display:none;">
+    <h2>Monthly Estimated Commission</h2>
+    <table class="breakdown" id="breakdown-table"></table>
+  </div>
+
+  <!-- OTHER INCOME -->
+  <div class="card" id="income-card" style="display:none;">
+    <h2>Monthly Other Income</h2>
+    <p class="hint">Extra money the clinic adds on top of your commission — none of this is deducted from what you earned.</p>
+    <table class="breakdown" id="income-table"></table>
+  </div>
+
+  <!-- YEARLY TOTAL -->
+  <div class="card" id="yearly-card" style="display:none;">
+    <h2>Estimated Yearly Amount</h2>
+    <p class="hint">Commission and recurring income (RRSP match, vacation accrual) are annualized as if this month repeats all year. Statutory holiday and personal day pay are projected using the real annual count instead — 8 holidays and 2 personal days per year — so checking those boxes this month doesn't skew the yearly total.</p>
+    <table class="breakdown" id="yearly-table"></table>
+  </div>
+
+  <!-- OTHER SAVINGS -->
+  <div class="card" id="savings-card" style="display:none;">
+    <h2>Monthly Other Savings</h2>
+    <p class="hint">Non-cash value the clinic provides — not money in your account, so it's kept separate.</p>
+    <table class="breakdown" id="savings-table"></table>
+  </div>
+
+  <!-- ESTIMATED NET PAY -->
+  <div class="card" id="net-pay-card" style="display:none;">
+    <h2>Monthly Estimated Net Pay</h2>
+    <p class="hint">Total commission after RRSP, QPP, QPIP, EI, and estimated income tax. Vacation accrual, CEUs, and employer benefits aren't cash yet, so they're not in this number.</p>
+    <table class="breakdown" id="net-pay-table"></table>
+    <p class="hint" style="margin-top:0.85rem; color:var(--warn-ink);">⚠ Rough estimate, not a paystub — can be off by a few hundred dollars. Assumes this month repeats all year, doesn't track your real year-to-date QPP/QPIP/EI caps, uses the max federal exemption instead of your actual TD1/TP-1015.3, and excludes other income and personal credits. Based on 2026 rates — needs updating each year.</p>
+  </div>
+
+  <div class="disclaimer">
+    This is an estimate for your own planning, not an official pay statement. Your actual pay is set by payroll's calculation — if this number looks off, bring it to payroll rather than relying on this figure.
+  </div>
+
+  <p class="privacy-note">
+    <button class="btn btn-ghost" onclick="clearAll()" style="font-size:11.5px; padding:4px 10px;">Clear everything saved on this device</button>
+  </p>
+</div>
+
+<script>
+// ---- Rate card fields (edit this list if your pay structure has different components) ----
+const RATE_FIELDS = [
+  {key:'r15', label:'15min session ($)'},
+  {key:'r30', label:'30min session ($)'},
+  {key:'r45', label:'45min session ($)'},
+  {key:'r60', label:'60min session ($)'},
+  {key:'r90', label:'90min session ($)'},
+  {key:'massage', label:'Massage ($/hr)'},
+  {key:'admin', label:'Admin ($/hr)'},
+  {key:'rz15', label:'Recovery Zone 15min ($)'},
+  {key:'rz30', label:'Recovery Zone 30min+ ($)'},
+];
+const SALARY_FIELD = {key:'salary', label:'Salary this period ($)'};
+
+const STORAGE_KEY = 'pay-estimator-rates-v1';
+const ABOUT_KEY = 'pay-estimator-about-v1';
+const WEEKS_PER_MONTH = 52/12; // fixed since this calculator always shows a monthly total
+
+// ---- 2026 Quebec/federal payroll deduction constants ----
+// Source: Revenu Québec, CRA, Retraite Québec, ESDC — confirmed rates as of Aug 2026.
+// These change every year (indexation) — must be updated annually or estimates go stale.
+const FEDERAL_BRACKETS_2026 = [[0,58523,0.14],[58523,117045,0.205],[117045,181440,0.26],[181440,258482,0.29],[258482,Infinity,0.33]];
+const FEDERAL_BPA_2026 = 16452;
+const FEDERAL_ABATEMENT_QC = 0.165; // Quebec residents get 16.5% off net federal tax
+const QC_BRACKETS_2026 = [[0,54345,0.14],[54345,108680,0.19],[108680,132245,0.24],[132245,Infinity,0.2575]];
+const QC_BPA_2026 = 18952;
+const QPP_BASIC_EXEMPTION = 3500;
+const QPP_MPE = 74600;       // maximum pensionable earnings
+const QPP_MPE2 = 85000;      // additional plan ceiling
+const QPP_RATE1 = 0.063;     // 5.3% base + 1% first additional plan (employee share)
+const QPP_RATE2 = 0.04;      // second additional plan (employee share), earnings between MPE and MPE2
+const QPIP_RATE = 0.00430;
+const QPIP_MAX_INSURABLE = 103000;
+const QPIP_MAX_ANNUAL = 442.90;
+const EI_RATE_QC = 0.0130;   // Quebec's reduced EI rate
+const EI_MAX_INSURABLE = 68900;
+const EI_MAX_ANNUAL = 895.70;
+
+function bracketTax(income, brackets){
+  let tax=0;
+  for(const [lo,hi,rate] of brackets){
+    if(income>lo) tax += (Math.min(income,hi)-lo)*rate;
+  }
+  return tax;
+}
+
+// Annualizes this month's commission (×12) to estimate withholding the way real payroll
+// systems do for variable income, then divides back to a monthly figure. This is the
+// biggest source of error for a commission-based role — a real month rarely repeats
+// itself 12 times, so the annualized income guess (and everything downstream of it) can
+// be meaningfully off from what actual year-end tax works out to.
+function estimateNetPayDeductions(monthlyCommission, monthlyHealthTaxableBenefit, monthlyRrspEE){
+  const annualGross = monthlyCommission*12;
+  const annualHealthBenefit = monthlyHealthTaxableBenefit*12;
+  const annualRrspEE = monthlyRrspEE*12;
+
+  const qppPensionable = Math.max(0, Math.min(annualGross,QPP_MPE)-QPP_BASIC_EXEMPTION);
+  let qppAnnual = qppPensionable*QPP_RATE1;
+  if(annualGross>QPP_MPE){
+    qppAnnual += (Math.min(annualGross,QPP_MPE2)-QPP_MPE)*QPP_RATE2;
+  }
+
+  const qpipAnnual = Math.min(Math.min(annualGross,QPIP_MAX_INSURABLE)*QPIP_RATE, QPIP_MAX_ANNUAL);
+  const eiAnnual = Math.min(Math.min(annualGross,EI_MAX_INSURABLE)*EI_RATE_QC, EI_MAX_ANNUAL);
+
+  const taxableIncome = Math.max(0, annualGross + annualHealthBenefit - annualRrspEE);
+  const fedGrossTax = bracketTax(taxableIncome, FEDERAL_BRACKETS_2026);
+  const fedNetTax = Math.max(0, fedGrossTax - FEDERAL_BPA_2026*0.14) * (1-FEDERAL_ABATEMENT_QC);
+  const qcGrossTax = bracketTax(taxableIncome, QC_BRACKETS_2026);
+  const qcNetTax = Math.max(0, qcGrossTax - QC_BPA_2026*0.14);
+  const annualTax = fedNetTax + qcNetTax;
+
+  return {
+    qpp: qppAnnual/12,
+    qpip: qpipAnnual/12,
+    ei: eiAnnual/12,
+    tax: annualTax/12
+  };
+}
+
+function onAboutChange(){
+  const daysPerWeek=parseFloat(document.getElementById('days-per-week').value)||0;
+  const healthPremium=parseFloat(document.getElementById('health-premium').value)||0;
+  const vacationWeeks=parseFloat(document.getElementById('vacation-weeks').value)||0;
+  const ceuAllowance=parseFloat(document.getElementById('ceu-allowance').value)||0;
+  localStorage.setItem(ABOUT_KEY, JSON.stringify({daysPerWeek, healthPremium, vacationWeeks, ceuAllowance}));
+  const cleaningEl=document.getElementById('cleaning-days');
+  if(cleaningEl) cleaningEl.value = Math.round(daysPerWeek*WEEKS_PER_MONTH);
+  calculate();
+}
+
+function loadAbout(){
+  const raw=localStorage.getItem(ABOUT_KEY);
+  if(!raw) return null;
+  try{ return JSON.parse(raw); }catch(e){ return null; }
+}
+
+function buildRateFields(){
+  const wrap=document.getElementById('rate-fields');
+  wrap.innerHTML='';
+  for(const f of RATE_FIELDS){
+    const div=document.createElement('div');
+    div.className='field';
+    div.innerHTML=`<label>${f.label}</label><input type="number" min="0" step="0.01" id="rate-${f.key}" value="0">`;
+    wrap.appendChild(div);
+  }
+  const salWrap=document.getElementById('salary-field-wrap');
+  salWrap.innerHTML=`<div class="field"><label>${SALARY_FIELD.label}</label><input type="number" min="0" step="0.01" id="rate-${SALARY_FIELD.key}" value="0"></div>`;
+}
+
+function toggleSalaryField(){
+  document.getElementById('salary-field-wrap').style.display=document.getElementById('has-salary').checked?'grid':'none';
+}
+
+function loadRates(){
+  const raw=localStorage.getItem(STORAGE_KEY);
+  if(!raw) return null;
+  try{ return JSON.parse(raw); }catch(e){ return null; }
+}
+
+function saveRates(){
+  const rates={};
+  for(const f of RATE_FIELDS){
+    rates[f.key]=parseFloat(document.getElementById('rate-'+f.key).value)||0;
+  }
+  const hasSalary=document.getElementById('has-salary').checked;
+  rates.salary = hasSalary ? (parseFloat(document.getElementById('rate-salary').value)||0) : 0;
+  rates.hasSalary = hasSalary;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(rates));
+  document.getElementById('rate-hint').textContent = 'Rate card saved on this device.';
+  document.getElementById('sessions-card').style.display='block';
+  buildSessionRows(rates);
+  calculate();
+}
+
+function applyRatesToFields(rates){
+  for(const f of RATE_FIELDS){
+    const el=document.getElementById('rate-'+f.key);
+    if(el) el.value = rates[f.key] ?? 0;
+  }
+  document.getElementById('has-salary').checked = !!rates.hasSalary;
+  toggleSalaryField();
+  if(rates.hasSalary){
+    const el=document.getElementById('rate-salary');
+    if(el) el.value = rates.salary ?? 0;
+  }
+}
+
+function clearAll(){
+  if(!confirm('This clears your saved rate card and everything entered on this page. Continue?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  location.reload();
+}
+
+// ---- Session rows ----
+const SESSION_TYPES = [
+  {key:'r15', label:'15min sessions'},
+  {key:'r30', label:'30min sessions'},
+  {key:'r45', label:'45min sessions'},
+  {key:'r60', label:'60min sessions'},
+  {key:'r90', label:'90min sessions'},
+  {key:'massage', label:'Massage (hours)', unit:'hrs'},
+  {key:'admin', label:'Admin (hours)', unit:'hrs'},
+  {key:'rz15', label:'Recovery Zone 15min'},
+  {key:'rz30', label:'Recovery Zone 30min+'},
+];
+
+function buildSessionRows(rates){
+  const wrap=document.getElementById('session-rows');
+  wrap.innerHTML='';
+  for(const s of SESSION_TYPES){
+    const rate=rates[s.key]||0;
+    if(rate<=0) continue; // skip components the employee doesn't do / left at $0
+    const row=document.createElement('div');
+    row.className='session-row';
+    const rateLabel = s.unit==='hrs' ? `$${rate.toFixed(2)}/hr` : `$${rate.toFixed(2)} each`;
+    row.innerHTML=`
+      <div class="label">${s.label}</div>
+      <div class="field"><label>${s.unit==='hrs'?'Hours':'Count'}</label><input type="number" min="0" step="${s.unit==='hrs'?'0.25':'1'}" id="count-${s.key}" value="0" oninput="calculate()"></div>
+      <div class="rate-display">${rateLabel}</div>
+      <div class="rate-display amt" id="amt-${s.key}">$0.00</div>`;
+    wrap.appendChild(row);
+  }
+}
+
+function onStatHolidayToggle(){
+  const checked=document.getElementById('stat-holiday-check').checked;
+  const holidayEl=document.getElementById('manual-holiday');
+  holidayEl.disabled=checked;
+  if(!checked) holidayEl.value='0';
+  calculate();
+}
+
+function onSickDayToggle(){
+  const checked=document.getElementById('sick-day-check').checked;
+  const sickEl=document.getElementById('manual-sick');
+  sickEl.disabled=checked;
+  if(!checked) sickEl.value='0';
+  calculate();
+}
+
+// ---- Session mix helper ----
+function getDaysPerWeekRef(){
+  return parseFloat(document.getElementById('days-per-week').value)||0;
+}
+
+// Whichever field the therapist just typed into becomes the source of truth for
+// this pass; the other two are derived from it and rounded for display only.
+// The monthly figure (rounded to a whole session) is what actually drives the
+// duration split — daily/weekly are reference numbers, not separate sources of error.
+function onMixVisitsChange(source){
+  const daysPerWeek=getDaysPerWeekRef();
+  const dailyEl=document.getElementById('mix-daily');
+  const weeklyEl=document.getElementById('mix-weekly');
+  const monthlyEl=document.getElementById('mix-monthly');
+
+  if(source==='daily'){
+    const daily=parseFloat(dailyEl.value)||0;
+    const weekly=daily*daysPerWeek;
+    const monthly=Math.round(weekly*WEEKS_PER_MONTH);
+    weeklyEl.value=Math.round(weekly*10)/10;
+    monthlyEl.value=monthly;
+  } else if(source==='weekly'){
+    const weekly=parseFloat(weeklyEl.value)||0;
+    const monthly=Math.round(weekly*WEEKS_PER_MONTH);
+    const daily=daysPerWeek>0 ? weekly/daysPerWeek : 0;
+    dailyEl.value=Math.round(daily*10)/10;
+    monthlyEl.value=monthly;
+  } else {
+    const monthly=parseFloat(monthlyEl.value)||0;
+    const weekly=monthly/WEEKS_PER_MONTH;
+    const daily=daysPerWeek>0 ? weekly/daysPerWeek : 0;
+    weeklyEl.value=Math.round(weekly*10)/10;
+    dailyEl.value=Math.round(daily*10)/10;
+  }
+  updateMixCounts();
+}
+
+// Largest-remainder rounding: splits `total` whole sessions across `fractions`
+// (0-1 shares) into whole numbers that sum back to `total` exactly, instead of
+// each share rounding independently and drifting off by a session or two.
+function splitByLargestRemainder(total, fractions){
+  const raw=fractions.map(f=>total*f);
+  const floors=raw.map(Math.floor);
+  let remainder=total-floors.reduce((a,b)=>a+b,0);
+  const order=raw.map((v,i)=>({i, frac:v-Math.floor(v)})).sort((a,b)=>b.frac-a.frac);
+  const result=[...floors];
+  for(let k=0;k<remainder;k++){ result[order[k].i]+=1; }
+  return result;
+}
+
+function updateMixCounts(){
+  const monthly=Math.round(parseFloat(document.getElementById('mix-monthly').value)||0);
+  const p15=Math.max(0, parseFloat(document.getElementById('mix-pct-15').value)||0);
+  const p30=Math.max(0, parseFloat(document.getElementById('mix-pct-30').value)||0);
+  const p60=Math.max(0, parseFloat(document.getElementById('mix-pct-60').value)||0);
+  const p90=Math.max(0, parseFloat(document.getElementById('mix-pct-90').value)||0);
+  const p45=Math.max(0, 100-p15-p30-p60-p90);
+  document.getElementById('mix-pct-45').value=p45;
+
+  const checkEl=document.getElementById('mix-check');
+  const fixedSum=p15+p30+p60+p90;
+  if(fixedSum>100){
+    checkEl.textContent=`⚠ 15% + 30% + 60% + 90% adds up to ${fixedSum}%, over 100. Fix the split before relying on these counts.`;
+    checkEl.style.color='var(--warn-ink)';
+  } else {
+    checkEl.textContent='';
+  }
+
+  const [c15, c30, c45, c60, c90]=splitByLargestRemainder(monthly, [p15/100, p30/100, p45/100, p60/100, p90/100]);
+  document.getElementById('mix-count-15').textContent=`→ ${c15} sessions`;
+  document.getElementById('mix-count-30').textContent=`→ ${c30} sessions`;
+  document.getElementById('mix-count-45').textContent=`→ ${c45} sessions`;
+  document.getElementById('mix-count-60').textContent=`→ ${c60} sessions`;
+  document.getElementById('mix-count-90').textContent=`→ ${c90} sessions`;
+
+  const set=(key,val)=>{ const el=document.getElementById('count-'+key); if(el) el.value=val; };
+  if(monthly>0){
+    set('r15', c15);
+    set('r30', c30);
+    set('r45', c45);
+    set('r60', c60);
+    set('r90', c90);
+  }
+  calculate();
+}
+
+function calculate(){
+  const rates=loadRates();
+  if(!rates) return;
+  let subtotal=0;
+  const lineItems=[];
+  for(const s of SESSION_TYPES){
+    const rate=rates[s.key]||0;
+    if(rate<=0) continue;
+    const countEl=document.getElementById('count-'+s.key);
+    const count=countEl?(parseFloat(countEl.value)||0):0;
+    const amt=count*rate;
+    const amtEl=document.getElementById('amt-'+s.key);
+    if(amtEl) amtEl.textContent='$'+amt.toFixed(2);
+    if(amt>0) lineItems.push([s.label, amt]);
+    subtotal+=amt;
+  }
+
+  const productSubtotal=parseFloat(document.getElementById('product-subtotal').value)||0;
+  const productCommission=productSubtotal*0.10;
+  document.getElementById('product-commission-display').value='$'+productCommission.toFixed(2);
+  if(productCommission>0) lineItems.push(['Products (10% of $'+productSubtotal.toFixed(2)+')', productCommission]);
+  subtotal+=productCommission;
+
+  const cleaningDays=parseFloat(document.getElementById('cleaning-days').value)||0;
+  const cleaningAmt=cleaningDays*0.25*(rates.admin||0);
+  if(cleaningAmt>0) lineItems.push(['Cleaning (15min × '+cleaningDays+' days)', cleaningAmt]);
+  subtotal+=cleaningAmt;
+
+  const patientCountKeys=['r15','r30','r45','r60','r90','rz15','rz30']; // count-based visits; massage & admin are hours, not patients
+  const totalPatients=patientCountKeys.reduce((sum,key)=>{
+    const el=document.getElementById('count-'+key);
+    return sum+(el?(parseFloat(el.value)||0):0);
+  },0);
+  const chartingPay=totalPatients*(10/60)*(rates.admin||0);
+  document.getElementById('charting-display').value='$'+chartingPay.toFixed(2);
+  if(chartingPay>0) lineItems.push(['Charting pay (10min × '+totalPatients+' patients)', chartingPay]);
+  subtotal+=chartingPay;
+
+  if(rates.hasSalary && rates.salary>0){
+    lineItems.push(['Salary', rates.salary]);
+    subtotal+=rates.salary;
+  }
+
+  const googleCount=parseFloat(document.getElementById('bonus-google').value)||0;
+  const referralCount=parseFloat(document.getElementById('bonus-referral').value)||0;
+  const performanceBonus=parseFloat(document.getElementById('bonus-performance').value)||0;
+  const googleBonus=googleCount*5;
+  const referralBonus=referralCount*5;
+  const bonus=googleBonus+referralBonus+performanceBonus;
+  if(document.getElementById('stat-holiday-check').checked){
+    document.getElementById('manual-holiday').value=((subtotal+bonus)/20).toFixed(2);
+  }
+  if(document.getElementById('sick-day-check').checked){
+    document.getElementById('manual-sick').value=((subtotal+bonus)/20).toFixed(2);
+  }
+  const sick=parseFloat(document.getElementById('manual-sick').value)||0;
+  const holiday=parseFloat(document.getElementById('manual-holiday').value)||0;
+
+  const gross=subtotal+bonus;
+  const rrspER=gross*0.03;
+  const about=loadAbout()||{healthPremium:0, vacationWeeks:0, ceuAllowance:0};
+  const healthTotal=about.healthPremium||0;
+  const healthEmployerShare=healthTotal*0.5;
+  const ceuAnnual=about.ceuAllowance||0;
+  const ceuMonthly=ceuAnnual/12;
+  const vacationWeeks=about.vacationWeeks||0;
+  const vacationAccrualPct=vacationWeeks*0.02; // 2 weeks/yr = 4%, matches the clinic's stated formula
+  const vacationBase=subtotal+bonus; // subtotal already includes product commission; bonus always counts per your call
+  const vacationAccrued=vacationBase*vacationAccrualPct;
+
+  const tbl=document.getElementById('breakdown-table');
+  let html='';
+  for(const [label,amt] of lineItems){
+    html+=`<tr><td>${label}</td><td>$${amt.toFixed(2)}</td></tr>`;
+  }
+  if(googleBonus>0) html+=`<tr><td>Google reviews (${googleCount} × $5)</td><td>$${googleBonus.toFixed(2)}</td></tr>`;
+  if(referralBonus>0) html+=`<tr><td>Word-of-mouth referrals (${referralCount} × $5)</td><td>$${referralBonus.toFixed(2)}</td></tr>`;
+  if(performanceBonus>0) html+=`<tr><td>Performance bonus</td><td>$${performanceBonus.toFixed(2)}</td></tr>`;
+  html+=`<tr class="total"><td>Total commission</td><td>$${gross.toFixed(2)}</td></tr>`;
+  tbl.innerHTML=html;
+
+  const incomeCard=document.getElementById('income-card');
+  const incomeTbl=document.getElementById('income-table');
+  let incomeHtml='';
+  incomeHtml+=`<tr><td>Employer RRSP match (3%)</td><td>$${rrspER.toFixed(2)}</td></tr>`;
+  if(holiday>0){
+    incomeHtml+=`<tr><td>Statutory holiday pay</td><td>$${holiday.toFixed(2)}</td></tr>`;
+  }
+  if(sick>0){
+    incomeHtml+=`<tr><td>Personal day pay</td><td>$${sick.toFixed(2)}</td></tr>`;
+  }
+  if(vacationAccrued>0){
+    incomeHtml+=`<tr><td>Vacation accrual — extra, on top of your commission (not deducted)</td><td>$${vacationAccrued.toFixed(2)}</td></tr>`;
+  }
+  const incomeTotal=rrspER+holiday+sick+vacationAccrued;
+  incomeHtml+=`<tr class="total"><td>Total other income</td><td>$${incomeTotal.toFixed(2)}</td></tr>`;
+  incomeCard.style.display='block';
+  incomeTbl.innerHTML=incomeHtml;
+
+  const yearlyCard=document.getElementById('yearly-card');
+  const yearlyTbl=document.getElementById('yearly-table');
+  const perEventValue=(subtotal+bonus)/20; // same 1/20 formula used when the checkbox is checked, computed regardless of this month's state
+  const yearlyCommission=gross*12;
+  const yearlyHolidayProjection=perEventValue*8;  // 8 paid stat holidays/year
+  const yearlyPersonalProjection=perEventValue*2; // 2 paid personal days/year
+  const yearlyOtherIncomeBase=(incomeTotal-holiday-sick)*12; // RRSP match + vacation accrual, which do recur monthly
+  const yearlyOtherIncome=yearlyOtherIncomeBase+yearlyHolidayProjection+yearlyPersonalProjection;
+  const yearlyTotal=yearlyCommission+yearlyOtherIncome;
+  let yearlyHtml='';
+  yearlyHtml+=`<tr><td>Total commission</td><td>$${gross.toFixed(2)}</td></tr>`;
+  yearlyHtml+=`<tr><td>Total other income (this month)</td><td>$${incomeTotal.toFixed(2)}</td></tr>`;
+  yearlyHtml+=`<tr class="total"><td>Combined monthly total</td><td>$${(gross+incomeTotal).toFixed(2)}</td></tr>`;
+  yearlyHtml+=`<tr class="rrsp"><td style="padding-top:12px">↳ Commission × 12</td><td style="padding-top:12px">$${yearlyCommission.toFixed(2)}</td></tr>`;
+  yearlyHtml+=`<tr class="rrsp"><td>↳ RRSP match + vacation accrual × 12</td><td>$${yearlyOtherIncomeBase.toFixed(2)}</td></tr>`;
+  yearlyHtml+=`<tr class="rrsp"><td>↳ Statutory holidays (8/yr × $${perEventValue.toFixed(2)})</td><td>$${yearlyHolidayProjection.toFixed(2)}</td></tr>`;
+  yearlyHtml+=`<tr class="rrsp"><td>↳ Personal days (2/yr × $${perEventValue.toFixed(2)})</td><td>$${yearlyPersonalProjection.toFixed(2)}</td></tr>`;
+  yearlyHtml+=`<tr class="total"><td>Estimated yearly amount</td><td>$${yearlyTotal.toFixed(2)}</td></tr>`;
+  yearlyCard.style.display='block';
+  yearlyTbl.innerHTML=yearlyHtml;
+
+  const savingsCard=document.getElementById('savings-card');
+  const savingsTbl=document.getElementById('savings-table');
+  let savingsHtml='';
+  if(healthEmployerShare>0){
+    savingsHtml+=`<tr><td>Health insurance (50% of $${healthTotal.toFixed(2)}/mo premium)</td><td>$${healthEmployerShare.toFixed(2)}</td></tr>`;
+  }
+  if(ceuMonthly>0){
+    savingsHtml+=`<tr><td>CEU allowance ($${ceuAnnual.toFixed(2)}/yr ÷ 12)</td><td>$${ceuMonthly.toFixed(2)}</td></tr>`;
+  }
+  const savingsTotal=healthEmployerShare+ceuMonthly;
+  if(savingsTotal>0){
+    savingsHtml+=`<tr class="total"><td>Total other savings</td><td>$${savingsTotal.toFixed(2)}</td></tr>`;
+    savingsCard.style.display='block';
+    savingsTbl.innerHTML=savingsHtml;
+  } else {
+    savingsCard.style.display='none';
+  }
+
+  const netCard=document.getElementById('net-pay-card');
+  const netTbl=document.getElementById('net-pay-table');
+  const rrspEE=gross*0.06;
+  const deductions=estimateNetPayDeductions(gross, healthEmployerShare, rrspEE);
+  const netPay=gross-rrspEE-deductions.qpp-deductions.qpip-deductions.ei-deductions.tax;
+  let netHtml='';
+  netHtml+=`<tr><td>Total commission</td><td>$${gross.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr><td>RRSP contribution (6%, still yours — redirected, not lost)</td><td>−$${rrspEE.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr><td>QPP (Quebec Pension Plan)</td><td>−$${deductions.qpp.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr><td>QPIP (parental insurance)</td><td>−$${deductions.qpip.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr><td>EI (Employment Insurance)</td><td>−$${deductions.ei.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr><td>Estimated income tax (federal + Quebec)</td><td>−$${deductions.tax.toFixed(2)}</td></tr>`;
+  if(healthEmployerShare>0){
+    netHtml+=`<tr class="rrsp"><td style="padding-left:14px">↳ Includes tax on $${healthEmployerShare.toFixed(2)}/mo health insurance taxable benefit (no cash added, but taxed)</td><td></td></tr>`;
+  }
+  netHtml+=`<tr class="total"><td>Estimated net pay</td><td>$${netPay.toFixed(2)}</td></tr>`;
+  netHtml+=`<tr class="total"><td>Estimated yearly net pay</td><td>$${(netPay*12).toFixed(2)}</td></tr>`;
+  netCard.style.display='block';
+  netTbl.innerHTML=netHtml;
+
+  document.getElementById('results-card').style.display='block';
+}
+
+// ---- Init ----
+buildRateFields();
+const existingAbout=loadAbout();
+if(existingAbout){
+  document.getElementById('days-per-week').value = existingAbout.daysPerWeek||0;
+  document.getElementById('health-premium').value = existingAbout.healthPremium||0;
+  document.getElementById('vacation-weeks').value = existingAbout.vacationWeeks ?? 2;
+  document.getElementById('ceu-allowance').value = existingAbout.ceuAllowance ?? 500;
+  document.getElementById('cleaning-days').value = Math.round((existingAbout.daysPerWeek||0)*WEEKS_PER_MONTH);
+}
+const existing=loadRates();
+if(existing){
+  applyRatesToFields(existing);
+  document.getElementById('rate-hint').textContent='Saved on this device. Edit and re-save if your rates change.';
+  document.getElementById('sessions-card').style.display='block';
+  buildSessionRows(existing);
+  calculate();
+}
+</script>
+</body>
+</html>
