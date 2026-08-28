@@ -110,7 +110,7 @@
         <input type="number" id="vacation-weeks" min="0" step="0.5" value="2" oninput="onAboutChange()">
       </div>
       <div class="field">
-        <label>CEU allowance per year ($)</label>
+        <label>CEU course reimbursement — up to $ per year (tax-free)</label>
         <input type="number" id="ceu-allowance" min="0" step="0.01" value="500" oninput="onAboutChange()">
       </div>
       <div class="field">
@@ -255,7 +255,7 @@
   <!-- OTHER SAVINGS -->
   <div class="card" id="savings-card" style="display:none;">
     <h2>Monthly Other Savings</h2>
-    <p class="hint">Non-cash value the clinic provides — not money in your account, so it's kept separate.</p>
+    <p class="hint">Non-cash value clinic provides</p>
     <table class="breakdown" id="savings-table"></table>
   </div>
 
@@ -795,7 +795,7 @@ function calculate(){
     savingsHtml+=`<tr><td>Health insurance (50% of $${healthTotal.toFixed(2)}/mo premium)</td><td>$${healthEmployerShare.toFixed(2)}</td></tr>`;
   }
   if(ceuMonthly>0){
-    savingsHtml+=`<tr><td>CEU allowance ($${ceuAnnual.toFixed(2)}/yr ÷ 12)</td><td>$${ceuMonthly.toFixed(2)}</td></tr>`;
+    savingsHtml+=`<tr><td>CEU course reimbursement — up to $${ceuAnnual.toFixed(2)}/yr, tax-free (shown as monthly average)</td><td>$${ceuMonthly.toFixed(2)}</td></tr>`;
   }
   const savingsTotal=healthEmployerShare+ceuMonthly;
   if(savingsTotal>0){
