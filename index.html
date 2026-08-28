@@ -187,6 +187,12 @@
 
     <div id="session-rows"></div>
 
+    <div style="margin-top:1rem; padding:0.85rem 1rem; background:#f0efe8; border-radius:10px;">
+      <p class="hint" style="margin:0; color:var(--ink); font-weight:700; font-size:14px;" id="hands-on-total-monthly">Monthly: 0.00 hrs</p>
+      <p class="hint" style="margin:2px 0 0;" id="hands-on-total-weekly">Weekly: 0.00 hrs</p>
+      <p class="hint" style="margin:6px 0 0;" id="hands-on-breakdown"></p>
+    </div>
+
     <div style="margin-top:1rem; border-top:1px solid var(--line); padding-top:1rem;">
       <div class="grid">
         <div class="field">
@@ -324,7 +330,8 @@ function loadEmployeeRates(name, pillEl){
     const el=document.getElementById('rate-salary');
     if(el) el.value = r.salary;
   }
-  document.getElementById('rate-hint').textContent = `Loaded ${name}'s rates — review below, then click "Save rate card" to keep them on this device.`;
+  saveRates(); // persists to localStorage AND rebuilds the session rows + recalculates — without this, the boxes update but the numbers below stay stuck on whoever was loaded last
+  document.getElementById('rate-hint').textContent = `Loaded ${name}'s rates — saved on this device.`;
 }
 
 const STORAGE_KEY = 'pay-estimator-rates-v1';
@@ -673,6 +680,29 @@ function calculate(){
   document.getElementById('charting-display').value='$'+chartingPay.toFixed(2);
   if(chartingPay>0) lineItems.push(['Charting pay (10min × '+totalPatients+' patients)', chartingPay]);
   subtotal+=chartingPay;
+
+  // Total hands-on hours: actual time spent with patients (session durations + massage
+  // hours + RZ time, inferred from each bucket's name since duration isn't separately
+  // tracked) plus the two admin activities tied directly to patient volume — charting
+  // (10min/patient) and end-of-day cleaning (15min/day worked).
+  const SESSION_DURATIONS={r15:15,r30:30,r45:45,r60:60,r90:90};
+  let sessionMinutes=0;
+  for(const key of Object.keys(SESSION_DURATIONS)){
+    const el=document.getElementById('count-'+key);
+    sessionMinutes += (el?(parseFloat(el.value)||0):0)*SESSION_DURATIONS[key];
+  }
+  const massageHoursEl=document.getElementById('count-massage');
+  const massageHours=massageHoursEl?(parseFloat(massageHoursEl.value)||0):0;
+  const rz15El=document.getElementById('count-rz15');
+  const rz30El=document.getElementById('count-rz30');
+  const rzMinutes=(rz15El?(parseFloat(rz15El.value)||0):0)*15 + (rz30El?(parseFloat(rz30El.value)||0):0)*30;
+  const therapyHours=(sessionMinutes+rzMinutes)/60 + massageHours;
+  const chartingHours=totalPatients*(10/60);
+  const cleaningHours=cleaningDays*0.25;
+  const totalHandsOnHours=therapyHours+chartingHours+cleaningHours;
+  document.getElementById('hands-on-total-monthly').textContent=`Monthly: ${totalHandsOnHours.toFixed(2)} hrs`;
+  document.getElementById('hands-on-total-weekly').textContent=`Weekly: ${(totalHandsOnHours/WEEKS_PER_MONTH).toFixed(2)} hrs`;
+  document.getElementById('hands-on-breakdown').textContent=`Therapy sessions: ${therapyHours.toFixed(2)} hrs  ·  Charting: ${chartingHours.toFixed(2)} hrs  ·  Cleaning: ${cleaningHours.toFixed(2)} hrs`;
 
   if(rates.hasSalary && rates.salary>0){
     lineItems.push(['Salary', rates.salary]);
