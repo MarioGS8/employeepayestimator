@@ -214,14 +214,7 @@
     </div>
 
     <div style="margin-top:1rem; border-top:1px solid var(--line); padding-top:1rem;">
-      <label style="display:flex; align-items:center; gap:8px; font-family:-apple-system,sans-serif; font-size:13px; margin-bottom:0.6rem;">
-        <input type="checkbox" id="stat-holiday-check" style="width:auto;" onchange="onStatHolidayToggle()">
-        There was a statutory holiday this month
-      </label>
-      <label style="display:flex; align-items:center; gap:8px; font-family:-apple-system,sans-serif; font-size:13px; margin-bottom:0.85rem;">
-        <input type="checkbox" id="sick-day-check" style="width:auto;" onchange="onSickDayToggle()">
-        A personal day was taken this month
-      </label>
+      <p class="hint" style="margin-top:0; margin-bottom:0.85rem;">Statutory holiday and personal day pay accrue automatically below, same as vacation — based on the counts set in About you, above.</p>
       <div class="grid">
         <input type="hidden" id="manual-sick" value="0">
         <input type="hidden" id="manual-holiday" value="0">
@@ -537,22 +530,6 @@ function buildSessionRows(rates){
   }
 }
 
-function onStatHolidayToggle(){
-  const checked=document.getElementById('stat-holiday-check').checked;
-  const holidayEl=document.getElementById('manual-holiday');
-  holidayEl.disabled=checked;
-  if(!checked) holidayEl.value='0';
-  calculate();
-}
-
-function onSickDayToggle(){
-  const checked=document.getElementById('sick-day-check').checked;
-  const sickEl=document.getElementById('manual-sick');
-  sickEl.disabled=checked;
-  if(!checked) sickEl.value='0';
-  calculate();
-}
-
 // ---- Session mix helper ----
 function getDaysPerWeekRef(){
   return parseFloat(document.getElementById('days-per-week').value)||0;
@@ -715,20 +692,22 @@ function calculate(){
   const googleBonus=googleCount*5;
   const referralBonus=referralCount*5;
   const bonus=googleBonus+referralBonus+performanceBonus;
-  if(document.getElementById('stat-holiday-check').checked){
-    document.getElementById('manual-holiday').value=((subtotal+bonus)/20).toFixed(2);
-  }
-  if(document.getElementById('sick-day-check').checked){
-    document.getElementById('manual-sick').value=((subtotal+bonus)/20).toFixed(2);
-  }
+
+  const about=loadAbout()||{healthPremium:0, vacationWeeks:0, ceuAllowance:0, statHolidaysPerYear:8, personalDaysPerYear:2};
+  const statHolidaysPerYear=about.statHolidaysPerYear ?? 8;
+  const personalDaysPerYear=about.personalDaysPerYear ?? 2;
+
+  // Statutory holiday and personal day pay accrue automatically, same treatment as
+  // vacation — a steady monthly slice of the annual entitlement, not tied to whether a
+  // specific event happened this exact month.
+  const perEventValue=(subtotal+bonus)/20;
+  document.getElementById('manual-holiday').value = (perEventValue*statHolidaysPerYear/12).toFixed(2);
+  document.getElementById('manual-sick').value = (perEventValue*personalDaysPerYear/12).toFixed(2);
   const sick=parseFloat(document.getElementById('manual-sick').value)||0;
   const holiday=parseFloat(document.getElementById('manual-holiday').value)||0;
 
   const gross=subtotal+bonus;
   const rrspER=gross*0.03;
-  const about=loadAbout()||{healthPremium:0, vacationWeeks:0, ceuAllowance:0, statHolidaysPerYear:8, personalDaysPerYear:2};
-  const statHolidaysPerYear=about.statHolidaysPerYear ?? 8;
-  const personalDaysPerYear=about.personalDaysPerYear ?? 2;
   const healthTotal=about.healthPremium||0;
   const healthEmployerShare=healthTotal*0.5;
   const ceuAnnual=about.ceuAllowance||0;
@@ -754,10 +733,10 @@ function calculate(){
   let incomeHtml='';
   incomeHtml+=`<tr><td>Employer RRSP match (3%)</td><td>$${rrspER.toFixed(2)}</td></tr>`;
   if(holiday>0){
-    incomeHtml+=`<tr><td>Statutory holiday pay</td><td>$${holiday.toFixed(2)}</td></tr>`;
+    incomeHtml+=`<tr><td>Statutory holiday accrual (${statHolidaysPerYear}/yr, smoothed over 12 months)</td><td>$${holiday.toFixed(2)}</td></tr>`;
   }
   if(sick>0){
-    incomeHtml+=`<tr><td>Personal day pay</td><td>$${sick.toFixed(2)}</td></tr>`;
+    incomeHtml+=`<tr><td>Personal day accrual (${personalDaysPerYear}/yr, smoothed over 12 months)</td><td>$${sick.toFixed(2)}</td></tr>`;
   }
   if(vacationAccrued>0){
     incomeHtml+=`<tr><td>Vacation accrual — extra, on top of your commission (not deducted)</td><td>$${vacationAccrued.toFixed(2)}</td></tr>`;
@@ -769,7 +748,6 @@ function calculate(){
 
   const yearlyCard=document.getElementById('yearly-card');
   const yearlyTbl=document.getElementById('yearly-table');
-  const perEventValue=(subtotal+bonus)/20; // same 1/20 formula used when the checkbox is checked, computed regardless of this month's state
   const yearlyCommission=gross*12;
   const yearlyHolidayProjection=perEventValue*statHolidaysPerYear;
   const yearlyPersonalProjection=perEventValue*personalDaysPerYear;
@@ -781,7 +759,8 @@ function calculate(){
   yearlyHtml+=`<tr><td>Total other income (this month)</td><td>$${incomeTotal.toFixed(2)}</td></tr>`;
   yearlyHtml+=`<tr class="total"><td>Combined monthly total</td><td>$${(gross+incomeTotal).toFixed(2)}</td></tr>`;
   yearlyHtml+=`<tr class="rrsp"><td style="padding-top:12px">↳ Commission × 12</td><td style="padding-top:12px">$${yearlyCommission.toFixed(2)}</td></tr>`;
-  yearlyHtml+=`<tr class="rrsp"><td>↳ RRSP match + vacation accrual × 12</td><td>$${yearlyOtherIncomeBase.toFixed(2)}</td></tr>`;
+  yearlyHtml+=`<tr class="rrsp"><td>↳ RRSP match × 12</td><td>$${(rrspER*12).toFixed(2)}</td></tr>`;
+  yearlyHtml+=`<tr class="rrsp"><td>↳ Vacation accrual × 12</td><td>$${(vacationAccrued*12).toFixed(2)}</td></tr>`;
   yearlyHtml+=`<tr class="rrsp"><td>↳ Statutory holidays (${statHolidaysPerYear}/yr × $${perEventValue.toFixed(2)})</td><td>$${yearlyHolidayProjection.toFixed(2)}</td></tr>`;
   yearlyHtml+=`<tr class="rrsp"><td>↳ Personal days (${personalDaysPerYear}/yr × $${perEventValue.toFixed(2)})</td><td>$${yearlyPersonalProjection.toFixed(2)}</td></tr>`;
   yearlyHtml+=`<tr class="total"><td>Estimated yearly amount</td><td>$${yearlyTotal.toFixed(2)}</td></tr>`;
